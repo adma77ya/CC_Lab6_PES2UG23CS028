@@ -19,14 +19,11 @@ pipeline {
                 sh '''
                 echo "Deploying backend containers..."
 
-                # Create network only if it doesn't exist
                 docker network inspect app-network >/dev/null 2>&1 || \
                 docker network create app-network
 
-                # Remove old containers safely
                 docker rm -f backend1 backend2 || true
 
-                # Start backend containers
                 docker run -d --name backend1 --network app-network backend-app
                 docker run -d --name backend2 --network app-network backend-app
                 '''
@@ -40,12 +37,18 @@ pipeline {
 
                 docker rm -f nginx-lb || true
 
+                # Start nginx first
                 docker run -d \
                   --name nginx-lb \
                   --network app-network \
                   -p 80:80 \
-                  -v $WORKSPACE/nginx/default.conf:/etc/nginx/conf.d/default.conf \
                   nginx
+
+                # Copy config from Jenkins workspace
+                docker cp nginx/default.conf nginx-lb:/etc/nginx/conf.d/default.conf
+
+                # Reload nginx config
+                docker exec nginx-lb nginx -s reload
                 '''
             }
         }
@@ -62,18 +65,10 @@ pipeline {
 
     post {
         success {
-            echo '✅ Pipeline executed successfully. NGINX load balancer is running.'
+            echo '✅ Pipeline executed successfully.'
         }
-
         failure {
-            echo '❌ Pipeline failed. Check console logs.'
-        }
-
-        always {
-            sh '''
-            # cleanup dangling images
-            docker image prune -f || true
-            '''
+            echo '❌ Pipeline failed. Check logs.'
         }
     }
 }
